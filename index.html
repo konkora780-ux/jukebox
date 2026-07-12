@@ -10,9 +10,7 @@
   body {
     font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
     background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
-    color: #eee;
-    min-height: 100vh;
-    padding: 16px 14px 90px;
+    color: #eee; min-height: 100vh; padding: 16px 14px 90px;
   }
   header { text-align: center; margin-bottom: 18px; }
   h1 {
@@ -24,7 +22,7 @@
 
   .toolbar {
     display: flex; flex-wrap: wrap; gap: 10px;
-    justify-content: center; align-items: center; margin-bottom: 16px;
+    justify-content: center; align-items: center; margin-bottom: 12px;
   }
   .btn {
     background: #e94560; color: #fff; border: none; border-radius: 10px;
@@ -33,11 +31,19 @@
   }
   .btn:active { transform: scale(.96); }
   .btn.secondary { background: #2d4059; }
+  .btn.ghost { background: transparent; border: 1px solid #3d5573; }
   .search {
     padding: 11px 14px; border-radius: 10px; border: 1px solid #2d4059;
-    background: #0f1b2d; color: #eee; font-size: 0.9rem; min-width: 160px; flex: 1; max-width: 280px;
+    background: #0f1b2d; color: #eee; font-size: 0.9rem; min-width: 150px; flex: 1; max-width: 260px;
   }
   label.loop { display: flex; align-items: center; gap: 6px; color: #9aa5c0; font-size: 0.82rem; cursor: pointer; }
+
+  .editbar {
+    display: none; flex-wrap: wrap; gap: 10px; justify-content: center; align-items: center;
+    margin-bottom: 12px; padding: 10px; background: rgba(15,27,45,.6); border-radius: 12px; max-width: 640px; margin-left:auto; margin-right:auto;
+  }
+  body.editing .editbar { display: flex; }
+  .editbar .hint { color:#9aa5c0; font-size:0.8rem; width:100%; text-align:center; }
 
   #status { text-align: center; color: #9aa5c0; font-size: 0.82rem; margin-bottom: 12px; min-height: 1.2em; }
 
@@ -50,7 +56,7 @@
     background: linear-gradient(145deg, #22335a, #1a2744);
     border: 1px solid #2f4570; border-radius: 14px; padding: 18px 12px;
     cursor: pointer; text-align: center; user-select: none; word-break: break-word;
-    transition: transform .1s, box-shadow .2s, border-color .2s;
+    transition: transform .1s, box-shadow .2s, border-color .2s; position: relative;
   }
   .pad:active { transform: scale(.96); }
   .pad.playing {
@@ -60,6 +66,25 @@
   @keyframes pulse { 0%,100%{ box-shadow:0 0 0 2px #f9d423,0 0 18px rgba(249,212,35,.4);} 50%{ box-shadow:0 0 0 2px #f9d423,0 0 32px rgba(249,212,35,.8);} }
   .pad .icon { font-size: 1.7rem; margin-bottom: 8px; }
   .pad .name { font-size: 0.85rem; color: #dfe6f5; }
+
+  /* 編集モード */
+  body.editing .pad { cursor: default; }
+  body.editing .pad:active { transform: none; }
+  .pad .edit-area { display: none; }
+  body.editing .pad .edit-area { display: block; }
+  body.editing .pad .name { display: none; }
+  body.editing .pad .icon { font-size: 1.2rem; margin-bottom: 6px; }
+  .pad .rename {
+    width: 100%; padding: 7px 8px; border-radius: 8px; border: 1px solid #3d5573;
+    background: #0f1b2d; color: #fff; font-size: 0.82rem; text-align: center; margin-bottom: 8px;
+  }
+  .pad .moves { display: flex; gap: 6px; justify-content: center; }
+  .pad .moves button {
+    flex: 1; background: #2d4059; color: #fff; border: none; border-radius: 7px;
+    padding: 6px 0; font-size: 0.95rem; cursor: pointer;
+  }
+  .pad .moves button:active { background: #3d5573; }
+  .pad .moves button:disabled { opacity: .3; cursor: default; }
 
   .empty { text-align: center; color: #9aa5c0; margin-top: 50px; line-height: 1.9; padding: 0 10px; }
   .empty code { background: #0f1b2d; padding: 2px 8px; border-radius: 6px; color: #f9d423; }
@@ -86,8 +111,16 @@
 <div class="toolbar">
   <input type="text" class="search" id="search" placeholder="🔍 曲名でしぼり込み…">
   <label class="loop"><input type="checkbox" id="loopChk"> 🔁 リピート</label>
-  <button class="btn secondary" id="pickBtn">📂 フォルダから読み込む</button>
+  <button class="btn secondary" id="editBtn">✏️ 編集</button>
+  <button class="btn ghost" id="pickBtn">📂 フォルダから読み込む</button>
   <input type="file" id="folderInput" webkitdirectory directory multiple accept="audio/*" hidden>
+</div>
+
+<div class="editbar" id="editbar">
+  <div class="hint">名前を書き換え、◀ ▶ で並び替えできます（この端末に自動保存されます）</div>
+  <button class="btn" id="doneBtn">✅ 完了</button>
+  <button class="btn secondary" id="resetBtn">↩️ 初期状態に戻す</button>
+  <button class="btn ghost" id="exportBtn">💾 並び順を書き出す</button>
 </div>
 
 <div id="status"></div>
@@ -104,39 +137,32 @@
 
 <script>
   const AUDIO_EXT = ['mp3','wav','m4a','ogg','flac','aac','opus','webm'];
-  const SOUND_DIR = '音源'; // 音源フォルダ名
-  const grid = document.getElementById('grid');
-  const emptyMsg = document.getElementById('emptyMsg');
-  const statusEl = document.getElementById('status');
-  const player = document.getElementById('player');
-  const footer = document.getElementById('footer');
-  const nowPlaying = document.getElementById('nowPlaying');
-  const search = document.getElementById('search');
-  const loopChk = document.getElementById('loopChk');
-  const vol = document.getElementById('vol');
-  let tracks = [];       // {name, url}
-  let currentPad = null;
+  const SOUND_DIR = '音源';
+  const LS_KEY = 'jukebox_custom_v1';
+  const $ = id => document.getElementById(id);
+  const grid = $('grid'), emptyMsg = $('emptyMsg'), statusEl = $('status');
+  const player = $('player'), footer = $('footer'), nowPlaying = $('nowPlaying');
+  const search = $('search'), loopChk = $('loopChk'), vol = $('vol');
+  let baseTracks = [];   // manifest等から読んだ元の並び {file, name, url}
+  let tracks = [];       // 表示用（並び替え・改名を反映）
+  let currentFile = null;
+  let editing = false;
 
-  // ページを開いたら、まずネット上（GitHub）の音源を自動読み込みしてみる
   window.addEventListener('DOMContentLoaded', autoLoad);
 
   async function autoLoad() {
-    // ローカルでダブルクリックした場合(file://)はフォルダ選択に任せる
-    if (location.protocol === 'file:') {
-      showEmpty(true);
-      return;
-    }
+    if (location.protocol === 'file:') { showEmpty(true); return; }
     statusEl.textContent = '音源を読み込み中…';
-    // 1) manifest.json があれば最優先で使う
+    // 1) manifest.json
     try {
       const res = await fetch(SOUND_DIR + '/manifest.json', { cache: 'no-store' });
       if (res.ok) {
         const list = await res.json();
-        setTracksFromNames(list);
-        if (tracks.length) { statusEl.textContent = ''; return; }
+        setBase(list.map(normalizeEntry));
+        if (baseTracks.length) { statusEl.textContent = ''; return; }
       }
     } catch (e) {}
-    // 2) GitHub Pages なら GitHub API でフォルダ内を自動一覧
+    // 2) GitHub API
     try {
       const gh = detectGitHub();
       if (gh) {
@@ -145,19 +171,18 @@
         if (res.ok) {
           const items = await res.json();
           const names = items.filter(i => i.type === 'file' && isAudio(i.name)).map(i => i.name);
-          setTracksFromNames(names);
-          statusEl.textContent = tracks.length ? '' : '';
-          if (tracks.length) return;
+          setBase(names.map(n => ({ file: n, title: null })));
+          if (baseTracks.length) { statusEl.textContent = ''; return; }
         }
       }
     } catch (e) {}
-    // どちらもダメなら案内を出す
-    if (!tracks.length) { statusEl.textContent = ''; showEmpty(true); }
+    statusEl.textContent = ''; showEmpty(true);
   }
 
+  function normalizeEntry(e){ return (typeof e === 'string') ? { file: e, title: null } : { file: e.file, title: e.title || null }; }
+  function isAudio(name){ return AUDIO_EXT.includes(name.split('.').pop().toLowerCase()); }
   function detectGitHub() {
-    // 例: username.github.io/repo/ から owner と repo を推定
-    const host = location.hostname; // username.github.io
+    const host = location.hostname;
     if (!host.endsWith('github.io')) return null;
     const owner = host.split('.')[0];
     const seg = location.pathname.split('/').filter(Boolean);
@@ -165,42 +190,87 @@
     return { owner, repo };
   }
 
-  function isAudio(name){ return AUDIO_EXT.includes(name.split('.').pop().toLowerCase()); }
-
-  function setTracksFromNames(names) {
-    tracks.forEach(t => { if (t.url.startsWith('blob:')) URL.revokeObjectURL(t.url); });
-    tracks = names
-      .filter(isAudio)
-      .sort((a,b) => a.localeCompare(b,'ja'))
-      .map(n => ({ name: n.replace(/\.[^.]+$/, ''), url: SOUND_DIR + '/' + encodeURIComponent(n) }));
+  function setBase(entries) {
+    baseTracks = entries.filter(e => isAudio(e.file)).map(e => ({
+      file: e.file,
+      name: e.title || e.file.replace(/\.[^.]+$/, ''),
+      url: SOUND_DIR + '/' + encodeURIComponent(e.file)
+    }));
+    applyCustom();
     render();
   }
 
-  // PCのフォルダから読み込む（オフライン用）
-  document.getElementById('pickBtn').onclick = () => document.getElementById('folderInput').click();
-  document.getElementById('folderInput').addEventListener('change', (e) => {
-    const files = [...e.target.files].filter(f => isAudio(f.name));
-    tracks.forEach(t => { if (t.url.startsWith('blob:')) URL.revokeObjectURL(t.url); });
-    tracks = files.sort((a,b)=>a.name.localeCompare(b.name,'ja'))
-      .map(f => ({ name: f.name.replace(/\.[^.]+$/, ''), url: URL.createObjectURL(f) }));
-    statusEl.textContent = '';
-    render();
+  // localStorage の順序・名前を反映
+  function applyCustom() {
+    const custom = loadCustom();
+    const byFile = Object.fromEntries(baseTracks.map(t => [t.file, {...t}]));
+    let ordered = [];
+    if (custom && custom.order) {
+      custom.order.forEach(f => { if (byFile[f]) { ordered.push(byFile[f]); delete byFile[f]; } });
+    }
+    Object.values(byFile).forEach(t => ordered.push(t)); // 新規ファイルは末尾へ
+    if (custom && custom.titles) ordered.forEach(t => { if (custom.titles[t.file]) t.name = custom.titles[t.file]; });
+    tracks = ordered;
+  }
+
+  function loadCustom(){ try { return JSON.parse(localStorage.getItem(LS_KEY)); } catch(e){ return null; } }
+  function saveCustom() {
+    const data = { order: tracks.map(t => t.file), titles: {} };
+    tracks.forEach(t => {
+      const def = t.file.replace(/\.[^.]+$/, '');
+      if (t.name !== def) data.titles[t.file] = t.name;
+    });
+    localStorage.setItem(LS_KEY, JSON.stringify(data));
+  }
+
+  // PCのフォルダから読み込む
+  $('pickBtn').onclick = () => $('folderInput').click();
+  $('folderInput').addEventListener('change', (e) => {
+    const files = [...e.target.files].filter(f => isAudio(f.name))
+      .sort((a,b)=>a.name.localeCompare(b.name,'ja'));
+    baseTracks = files.map(f => ({ file: f.name, name: f.name.replace(/\.[^.]+$/, ''), url: URL.createObjectURL(f) }));
+    applyCustom(); statusEl.textContent = ''; render();
   });
 
   function render() {
-    const q = search.value.trim().toLowerCase();
     grid.innerHTML = '';
     if (tracks.length === 0) { showEmpty(true); return; }
     showEmpty(false);
-    const shown = tracks.filter(t => t.name.toLowerCase().includes(q));
-    if (shown.length === 0) { grid.innerHTML = '<div class="empty" style="grid-column:1/-1">該当する曲がありません</div>'; return; }
-    shown.forEach(t => {
+    const q = search.value.trim().toLowerCase();
+    const list = editing ? tracks : tracks.filter(t => t.name.toLowerCase().includes(q));
+    if (list.length === 0) { grid.innerHTML = '<div class="empty" style="grid-column:1/-1">該当する曲がありません</div>'; return; }
+    list.forEach((t) => {
+      const idx = tracks.indexOf(t);
       const pad = document.createElement('div');
-      pad.className = 'pad';
-      pad.innerHTML = `<div class="icon">🎵</div><div class="name">${escapeHtml(t.name)}</div>`;
-      pad.onclick = () => play(t, pad);
+      pad.className = 'pad' + (t.file === currentFile ? ' playing' : '');
+      const icon = document.createElement('div'); icon.className = 'icon'; icon.textContent = '🎵';
+      const name = document.createElement('div'); name.className = 'name'; name.textContent = t.name;
+      pad.appendChild(icon); pad.appendChild(name);
+
+      // 編集エリア
+      const ea = document.createElement('div'); ea.className = 'edit-area';
+      const inp = document.createElement('input'); inp.className = 'rename'; inp.value = t.name;
+      inp.addEventListener('click', e => e.stopPropagation());
+      inp.addEventListener('input', () => { t.name = inp.value; name.textContent = inp.value; saveCustom(); });
+      const moves = document.createElement('div'); moves.className = 'moves';
+      const left = document.createElement('button'); left.textContent = '◀'; left.title='前へ';
+      const right = document.createElement('button'); right.textContent = '▶'; right.title='後ろへ';
+      left.disabled = idx === 0; right.disabled = idx === tracks.length - 1;
+      left.addEventListener('click', e => { e.stopPropagation(); move(idx, -1); });
+      right.addEventListener('click', e => { e.stopPropagation(); move(idx, 1); });
+      moves.appendChild(left); moves.appendChild(right);
+      ea.appendChild(inp); ea.appendChild(moves); pad.appendChild(ea);
+
+      pad.addEventListener('click', () => { if (!editing) play(t); });
       grid.appendChild(pad);
     });
+  }
+
+  function move(idx, dir) {
+    const j = idx + dir;
+    if (j < 0 || j >= tracks.length) return;
+    [tracks[idx], tracks[j]] = [tracks[j], tracks[idx]];
+    saveCustom(); render();
   }
 
   function showEmpty(show) {
@@ -208,35 +278,46 @@
     emptyMsg.style.display = 'block';
     emptyMsg.innerHTML = location.protocol === 'file:'
       ? `下の <b>「📂 フォルダから読み込む」</b> を押して <code>音源</code> フォルダを選んでください。`
-      : `音源が見つかりませんでした。<code>音源</code> フォルダに音楽ファイルを入れてください。<br>（または下の「📂 フォルダから読み込む」でPCから読み込めます）`;
+      : `音源が見つかりませんでした。<code>音源</code> フォルダに音楽ファイルを入れてください。`;
   }
 
-  function play(track, pad) {
-    if (currentPad) currentPad.classList.remove('playing');
+  function play(track) {
     player.src = track.url;
     player.loop = loopChk.checked;
     player.volume = parseFloat(vol.value);
     player.play().catch(()=>{});
-    pad.classList.add('playing');
-    currentPad = pad;
+    currentFile = track.file;
     nowPlaying.textContent = '▶ ' + track.name;
     footer.classList.add('show');
+    render();
   }
 
-  document.getElementById('stopBtn').onclick = () => {
+  $('stopBtn').onclick = () => {
     player.pause(); player.currentTime = 0;
-    if (currentPad) currentPad.classList.remove('playing');
-    currentPad = null;
-    nowPlaying.textContent = '—';
-    footer.classList.remove('show');
+    currentFile = null; nowPlaying.textContent = '—';
+    footer.classList.remove('show'); render();
+  };
+  player.addEventListener('ended', () => { if (!player.loop) { currentFile = null; render(); } });
+
+  // 編集モード
+  $('editBtn').onclick = () => { editing = true; document.body.classList.add('editing'); render(); };
+  $('doneBtn').onclick = () => { editing = false; document.body.classList.remove('editing'); saveCustom(); render(); };
+  $('resetBtn').onclick = () => {
+    if (!confirm('名前と並び順を初期状態に戻します。よろしいですか？')) return;
+    localStorage.removeItem(LS_KEY); applyCustom(); render();
+  };
+  $('exportBtn').onclick = () => {
+    const data = tracks.map(t => ({ file: t.file, title: t.name }));
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = 'manifest.json'; a.click();
+    URL.revokeObjectURL(a.href);
+    alert('manifest.json を書き出しました。\nこれをGitHubの「音源」フォルダに置き換えると、全員の初期状態になります。');
   };
 
-  player.addEventListener('ended', () => { if (currentPad && !player.loop) currentPad.classList.remove('playing'); });
   loopChk.addEventListener('change', () => { player.loop = loopChk.checked; });
   vol.addEventListener('input', () => { player.volume = parseFloat(vol.value); });
-  search.addEventListener('input', render);
-
-  function escapeHtml(s){ return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  search.addEventListener('input', () => { if (!editing) render(); });
 </script>
 </body>
 </html>
