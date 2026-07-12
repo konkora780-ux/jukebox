@@ -98,6 +98,8 @@
     opacity: .75; transform: scale(1.05); z-index: 10;
     box-shadow: 0 12px 30px rgba(0,0,0,.55); border-color: #f9d423;
   }
+  body.dragging-active { touch-action: none; user-select: none; overflow: hidden; }
+  body.dragging-active #grid { touch-action: none; }
 
   .empty { text-align: center; color: #9aa5c0; margin-top: 50px; line-height: 1.9; padding: 0 10px; }
   .empty code { background: #0f1b2d; padding: 2px 8px; border-radius: 6px; color: #f9d423; }
@@ -293,36 +295,41 @@
   }
 
   // ドラッグ&ドロップ並び替え（マウス・タッチ両対応）
+  // ポインタの追跡は document 全体で行う（別のボタンの上に移動しても切れないように）
   let dragEl = null;
   function startDrag(e, pad) {
     if (!editing) return;
     e.preventDefault(); e.stopPropagation();
     dragEl = pad;
     pad.classList.add('dragging');
-    try { pad.setPointerCapture(e.pointerId); } catch (err) {}
-    pad.addEventListener('pointermove', onDragMove);
-    pad.addEventListener('pointerup', endDrag);
-    pad.addEventListener('pointercancel', endDrag);
+    document.body.classList.add('dragging-active');
+    document.addEventListener('pointermove', onDragMove, { passive: false });
+    document.addEventListener('pointerup', endDrag);
+    document.addEventListener('pointercancel', endDrag);
   }
   function onDragMove(e) {
     if (!dragEl) return;
     e.preventDefault();
+    const x = e.clientX, y = e.clientY;
     dragEl.style.pointerEvents = 'none';
-    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const el = document.elementFromPoint(x, y);
     dragEl.style.pointerEvents = '';
     const over = el && el.closest ? el.closest('.pad') : null;
     if (!over || over === dragEl || over.parentNode !== grid) return;
     const rect = over.getBoundingClientRect();
-    const before = e.clientX < rect.left + rect.width / 2;
+    // 上の行/左半分なら手前に、下の行/右半分なら後ろに挿入
+    const before = y < rect.top + rect.height / 2
+      || (y <= rect.bottom && x < rect.left + rect.width / 2);
     grid.insertBefore(dragEl, before ? over : over.nextSibling);
   }
-  function endDrag(e) {
+  function endDrag() {
     if (!dragEl) return;
     dragEl.classList.remove('dragging');
-    try { dragEl.releasePointerCapture(e.pointerId); } catch (err) {}
-    dragEl.removeEventListener('pointermove', onDragMove);
-    dragEl.removeEventListener('pointerup', endDrag);
-    dragEl.removeEventListener('pointercancel', endDrag);
+    dragEl.style.pointerEvents = '';
+    document.body.classList.remove('dragging-active');
+    document.removeEventListener('pointermove', onDragMove);
+    document.removeEventListener('pointerup', endDrag);
+    document.removeEventListener('pointercancel', endDrag);
     dragEl = null;
     // DOMの並び順から tracks を作り直す
     const order = [...grid.children].map(p => p.dataset.file);
