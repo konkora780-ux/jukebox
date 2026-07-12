@@ -311,16 +311,16 @@
     if (!dragEl) return;
     e.preventDefault();
     const x = e.clientX, y = e.clientY;
-    dragEl.style.pointerEvents = 'none';
-    const el = document.elementFromPoint(x, y);
-    dragEl.style.pointerEvents = '';
-    const over = el && el.closest ? el.closest('.pad') : null;
-    if (!over || over === dragEl || over.parentNode !== grid) return;
-    const rect = over.getBoundingClientRect();
-    // 上の行/左半分なら手前に、下の行/右半分なら後ろに挿入
-    const before = y < rect.top + rect.height / 2
-      || (y <= rect.bottom && x < rect.left + rect.width / 2);
-    grid.insertBefore(dragEl, before ? over : over.nextSibling);
+    // 各ボタンの中心と指(カーソル)の位置を読み順で比較し、挿入位置を決める
+    const sibs = [...grid.querySelectorAll('.pad')].filter(p => p !== dragEl);
+    let insertBefore = null;
+    for (const p of sibs) {
+      const r = p.getBoundingClientRect();
+      const cx = r.left + r.width / 2;
+      if (y < r.top) { insertBefore = p; break; }              // このボタンより上の行にいる
+      if (y <= r.bottom && x < cx) { insertBefore = p; break; } // 同じ行で、このボタンの中心より左
+    }
+    grid.insertBefore(dragEl, insertBefore); // 該当なし(=末尾)なら null で末尾へ
   }
   function endDrag() {
     if (!dragEl) return;
