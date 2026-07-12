@@ -64,6 +64,7 @@
     animation: pulse 1.2s infinite;
   }
   @keyframes pulse { 0%,100%{ box-shadow:0 0 0 2px #f9d423,0 0 18px rgba(249,212,35,.4);} 50%{ box-shadow:0 0 0 2px #f9d423,0 0 32px rgba(249,212,35,.8);} }
+  .pad.paused { border-color: #f9d423; box-shadow: 0 0 0 2px rgba(249,212,35,.55); }
   .pad .icon { font-size: 1.7rem; margin-bottom: 8px; }
   .pad .name { font-size: 0.85rem; color: #dfe6f5; }
 
@@ -158,6 +159,7 @@
   let baseTracks = [];   // manifest等から読んだ元の並び {file, name, url}
   let tracks = [];       // 表示用（並び替え・改名を反映）
   let currentFile = null;
+  let paused = false;
   let editing = false;
 
   window.addEventListener('DOMContentLoaded', autoLoad);
@@ -254,9 +256,11 @@
     list.forEach((t) => {
       const idx = tracks.indexOf(t);
       const pad = document.createElement('div');
-      pad.className = 'pad' + (t.file === currentFile ? ' playing' : '');
+      const active = t.file === currentFile;
+      pad.className = 'pad' + (active ? (paused ? ' paused' : ' playing') : '');
       pad.dataset.file = t.file;
-      const icon = document.createElement('div'); icon.className = 'icon'; icon.textContent = '🎵';
+      const icon = document.createElement('div'); icon.className = 'icon';
+      icon.textContent = active ? (paused ? '▶️' : '⏸️') : '🎵';
       const name = document.createElement('div'); name.className = 'name'; name.textContent = t.name;
       pad.appendChild(icon); pad.appendChild(name);
 
@@ -276,7 +280,7 @@
       moves.appendChild(left); moves.appendChild(right);
       ea.appendChild(grip); ea.appendChild(inp); ea.appendChild(moves); pad.appendChild(ea);
 
-      pad.addEventListener('click', () => { if (!editing) play(t); });
+      pad.addEventListener('click', () => { if (!editing) toggle(t); });
       grid.appendChild(pad);
     });
   }
@@ -334,23 +338,37 @@
       : `音源が見つかりませんでした。<code>音源</code> フォルダに音楽ファイルを入れてください。`;
   }
 
+  // ボタンを押すたびに 再生 ⇔ 一時停止 を切り替え
+  function toggle(track) {
+    if (currentFile === track.file) {
+      if (player.paused) { player.play().catch(()=>{}); paused = false; }
+      else { player.pause(); paused = true; }
+      updateNowPlaying(track); render();
+    } else {
+      play(track);
+    }
+  }
+
   function play(track) {
     player.src = track.url;
     player.loop = loopChk.checked;
     player.volume = parseFloat(vol.value);
     player.play().catch(()=>{});
-    currentFile = track.file;
-    nowPlaying.textContent = '▶ ' + track.name;
+    currentFile = track.file; paused = false;
+    updateNowPlaying(track); render();
+  }
+
+  function updateNowPlaying(track) {
+    nowPlaying.textContent = (paused ? '⏸ ' : '▶ ') + track.name + (paused ? '（一時停止中）' : '');
     footer.classList.add('show');
-    render();
   }
 
   $('stopBtn').onclick = () => {
     player.pause(); player.currentTime = 0;
-    currentFile = null; nowPlaying.textContent = '—';
+    currentFile = null; paused = false; nowPlaying.textContent = '—';
     footer.classList.remove('show'); render();
   };
-  player.addEventListener('ended', () => { if (!player.loop) { currentFile = null; render(); } });
+  player.addEventListener('ended', () => { if (!player.loop) { currentFile = null; paused = false; render(); } });
 
   // 編集モード
   $('editBtn').onclick = () => { editing = true; document.body.classList.add('editing'); render(); };
