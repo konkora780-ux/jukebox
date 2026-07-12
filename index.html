@@ -85,6 +85,18 @@
   }
   .pad .moves button:active { background: #3d5573; }
   .pad .moves button:disabled { opacity: .3; cursor: default; }
+  .pad .grip { display: none; }
+  body.editing .pad .grip {
+    display: flex; align-items: center; justify-content: center; gap: 4px;
+    width: 100%; padding: 7px 0; margin-bottom: 8px;
+    background: #1b2b4a; border: 1px dashed #3d5573; border-radius: 8px;
+    color: #9aa5c0; font-size: 0.78rem; cursor: grab; touch-action: none; user-select: none;
+  }
+  body.editing .pad .grip:active { cursor: grabbing; background: #24375c; }
+  .pad.dragging {
+    opacity: .75; transform: scale(1.05); z-index: 10;
+    box-shadow: 0 12px 30px rgba(0,0,0,.55); border-color: #f9d423;
+  }
 
   .empty { text-align: center; color: #9aa5c0; margin-top: 50px; line-height: 1.9; padding: 0 10px; }
   .empty code { background: #0f1b2d; padding: 2px 8px; border-radius: 6px; color: #f9d423; }
@@ -243,12 +255,15 @@
       const idx = tracks.indexOf(t);
       const pad = document.createElement('div');
       pad.className = 'pad' + (t.file === currentFile ? ' playing' : '');
+      pad.dataset.file = t.file;
       const icon = document.createElement('div'); icon.className = 'icon'; icon.textContent = '🎵';
       const name = document.createElement('div'); name.className = 'name'; name.textContent = t.name;
       pad.appendChild(icon); pad.appendChild(name);
 
       // 編集エリア
       const ea = document.createElement('div'); ea.className = 'edit-area';
+      const grip = document.createElement('div'); grip.className = 'grip'; grip.textContent = '⠿ ドラッグで移動';
+      grip.addEventListener('pointerdown', e => startDrag(e, pad));
       const inp = document.createElement('input'); inp.className = 'rename'; inp.value = t.name;
       inp.addEventListener('click', e => e.stopPropagation());
       inp.addEventListener('input', () => { t.name = inp.value; name.textContent = inp.value; saveCustom(); });
@@ -259,7 +274,7 @@
       left.addEventListener('click', e => { e.stopPropagation(); move(idx, -1); });
       right.addEventListener('click', e => { e.stopPropagation(); move(idx, 1); });
       moves.appendChild(left); moves.appendChild(right);
-      ea.appendChild(inp); ea.appendChild(moves); pad.appendChild(ea);
+      ea.appendChild(grip); ea.appendChild(inp); ea.appendChild(moves); pad.appendChild(ea);
 
       pad.addEventListener('click', () => { if (!editing) play(t); });
       grid.appendChild(pad);
@@ -270,6 +285,44 @@
     const j = idx + dir;
     if (j < 0 || j >= tracks.length) return;
     [tracks[idx], tracks[j]] = [tracks[j], tracks[idx]];
+    saveCustom(); render();
+  }
+
+  // ドラッグ&ドロップ並び替え（マウス・タッチ両対応）
+  let dragEl = null;
+  function startDrag(e, pad) {
+    if (!editing) return;
+    e.preventDefault(); e.stopPropagation();
+    dragEl = pad;
+    pad.classList.add('dragging');
+    try { pad.setPointerCapture(e.pointerId); } catch (err) {}
+    pad.addEventListener('pointermove', onDragMove);
+    pad.addEventListener('pointerup', endDrag);
+    pad.addEventListener('pointercancel', endDrag);
+  }
+  function onDragMove(e) {
+    if (!dragEl) return;
+    e.preventDefault();
+    dragEl.style.pointerEvents = 'none';
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    dragEl.style.pointerEvents = '';
+    const over = el && el.closest ? el.closest('.pad') : null;
+    if (!over || over === dragEl || over.parentNode !== grid) return;
+    const rect = over.getBoundingClientRect();
+    const before = e.clientX < rect.left + rect.width / 2;
+    grid.insertBefore(dragEl, before ? over : over.nextSibling);
+  }
+  function endDrag(e) {
+    if (!dragEl) return;
+    dragEl.classList.remove('dragging');
+    try { dragEl.releasePointerCapture(e.pointerId); } catch (err) {}
+    dragEl.removeEventListener('pointermove', onDragMove);
+    dragEl.removeEventListener('pointerup', endDrag);
+    dragEl.removeEventListener('pointercancel', endDrag);
+    dragEl = null;
+    // DOMの並び順から tracks を作り直す
+    const order = [...grid.children].map(p => p.dataset.file);
+    tracks = order.map(f => tracks.find(t => t.file === f)).filter(Boolean);
     saveCustom(); render();
   }
 
