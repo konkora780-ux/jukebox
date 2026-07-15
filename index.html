@@ -94,12 +94,16 @@
     color: #9aa5c0; font-size: 0.78rem; cursor: grab; touch-action: none; user-select: none;
   }
   body.editing .pad .grip:active { cursor: grabbing; background: #24375c; }
+  body.editing .pad { cursor: grab; touch-action: none; }
   .pad.dragging {
-    opacity: .75; transform: scale(1.05); z-index: 10;
-    box-shadow: 0 12px 30px rgba(0,0,0,.55); border-color: #f9d423;
+    opacity: .95; transform: scale(1.06) rotate(1.5deg); cursor: grabbing;
+    box-shadow: 0 18px 45px rgba(0,0,0,.65); border-color: #f9d423;
+  }
+  .placeholder {
+    border: 2px dashed #f9d423; border-radius: 14px;
+    background: rgba(249,212,35,.10);
   }
   body.dragging-active { touch-action: none; user-select: none; overflow: hidden; }
-  body.dragging-active #grid { touch-action: none; }
 
   .empty { text-align: center; color: #9aa5c0; margin-top: 50px; line-height: 1.9; padding: 0 10px; }
   .empty code { background: #0f1b2d; padding: 2px 8px; border-radius: 6px; color: #f9d423; }
@@ -268,8 +272,7 @@
 
       // 編集エリア
       const ea = document.createElement('div'); ea.className = 'edit-area';
-      const grip = document.createElement('div'); grip.className = 'grip'; grip.textContent = '⠿ ドラッグで移動';
-      grip.addEventListener('pointerdown', e => startDrag(e, pad));
+      const grip = document.createElement('div'); grip.className = 'grip'; grip.textContent = '⠿ どこでも掴んで移動';
       const inp = document.createElement('input'); inp.className = 'rename'; inp.value = t.name;
       inp.addEventListener('click', e => e.stopPropagation());
       inp.addEventListener('input', () => { t.name = inp.value; name.textContent = inp.value; saveCustom(); });
@@ -282,6 +285,7 @@
       moves.appendChild(left); moves.appendChild(right);
       ea.appendChild(grip); ea.appendChild(inp); ea.appendChild(moves); pad.appendChild(ea);
 
+      pad.addEventListener('pointerdown', e => startDrag(e, pad));
       pad.addEventListener('click', () => { if (!editing) toggle(t); });
       grid.appendChild(pad);
     });
@@ -294,45 +298,68 @@
     saveCustom(); render();
   }
 
-  // ドラッグ&ドロップ並び替え（マウス・タッチ両対応）
-  // ポインタの追跡は document 全体で行う（別のボタンの上に移動しても切れないように）
-  let dragEl = null;
+  // ドラッグ&ドロップ並び替え（箱ごと指について動く／マウス・タッチ両対応）
+  let drag = null; // { el, ph, offsetX, offsetY }
   function startDrag(e, pad) {
-    if (!editing) return;
-    e.preventDefault(); e.stopPropagation();
-    dragEl = pad;
+    if (!editing || drag) return;
+    // 名前の入力欄と ◀▶ ボタンの上からは掴まない
+    if (e.target.closest('.rename') || e.target.closest('.moves')) return;
+    e.preventDefault();
+    const r = pad.getBoundingClientRect();
+    // 空いた場所に点線の枠を置く
+    const ph = document.createElement('div');
+    ph.className = 'placeholder';
+    ph.style.height = r.height + 'px';
+    grid.insertBefore(ph, pad);
+    // 箱を浮かせて指に追従させる
     pad.classList.add('dragging');
+    pad.style.position = 'fixed';
+    pad.style.width = r.width + 'px';
+    pad.style.height = r.height + 'px';
+    pad.style.left = r.left + 'px';
+    pad.style.top = r.top + 'px';
+    pad.style.zIndex = '1000';
+    pad.style.pointerEvents = 'none';
+    drag = { el: pad, ph, offsetX: e.clientX - r.left, offsetY: e.clientY - r.top };
     document.body.classList.add('dragging-active');
     document.addEventListener('pointermove', onDragMove, { passive: false });
     document.addEventListener('pointerup', endDrag);
     document.addEventListener('pointercancel', endDrag);
   }
+
   function onDragMove(e) {
-    if (!dragEl) return;
+    if (!drag) return;
     e.preventDefault();
     const x = e.clientX, y = e.clientY;
-    // 各ボタンの中心と指(カーソル)の位置を読み順で比較し、挿入位置を決める
-    const sibs = [...grid.querySelectorAll('.pad')].filter(p => p !== dragEl);
+    // 箱を指の位置へ
+    drag.el.style.left = (x - drag.offsetX) + 'px';
+    drag.el.style.top = (y - drag.offsetY) + 'px';
+    // 点線枠(落ちる場所)を決める：各ボタンの中心と指の位置を読み順で比較
+    const sibs = [...grid.children].filter(c => c !== drag.el && c !== drag.ph);
     let insertBefore = null;
     for (const p of sibs) {
       const r = p.getBoundingClientRect();
-      const cx = r.left + r.width / 2;
-      if (y < r.top) { insertBefore = p; break; }              // このボタンより上の行にいる
-      if (y <= r.bottom && x < cx) { insertBefore = p; break; } // 同じ行で、このボタンの中心より左
+      if (y < r.top) { insertBefore = p; break; }                              // 上の行にいる
+      if (y <= r.bottom && x < r.left + r.width / 2) { insertBefore = p; break; } // 同じ行で中心より左
     }
-    grid.insertBefore(dragEl, insertBefore); // 該当なし(=末尾)なら null で末尾へ
+    grid.insertBefore(drag.ph, insertBefore); // 該当なし(=末尾)なら null で末尾へ
   }
+
   function endDrag() {
-    if (!dragEl) return;
-    dragEl.classList.remove('dragging');
-    dragEl.style.pointerEvents = '';
+    if (!drag) return;
+    const { el, ph } = drag;
+    // 点線枠の場所に箱を収める
+    el.classList.remove('dragging');
+    el.style.cssText = '';
+    grid.insertBefore(el, ph);
+    ph.remove();
     document.body.classList.remove('dragging-active');
     document.removeEventListener('pointermove', onDragMove);
     document.removeEventListener('pointerup', endDrag);
     document.removeEventListener('pointercancel', endDrag);
-    dragEl = null;
+    drag = null;
     // DOMの並び順から tracks を作り直す
-    const order = [...grid.children].map(p => p.dataset.file);
+    const order = [...grid.querySelectorAll('.pad')].map(p => p.dataset.file);
     tracks = order.map(f => tracks.find(t => t.file === f)).filter(Boolean);
     saveCustom(); render();
   }
